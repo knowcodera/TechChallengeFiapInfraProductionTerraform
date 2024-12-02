@@ -1,0 +1,47 @@
+name: Terraform Production Infrastructure CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_production_cosmosdb_name: ${{ secrets.PRODUCTION_COSMOSDB_NAME }}
+      TF_VAR_production_db_name: ${{ secrets.PRODUCTION_DB_NAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.9.6
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Import Resources
+        run: |
+          terraform import azurerm_resource_group.rg /subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/MyResourceGroup || true
+          terraform import azurerm_cosmosdb_account.production_cosmosdb /subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/MyResourceGroup/providers/Microsoft.DocumentDB/databaseAccounts/${{ env.TF_VAR_production_cosmosdb_name }} || true
+          terraform import azurerm_cosmosdb_mongo_database.production_db /subscriptions/${{ env.ARM_SUBSCRIPTION_ID }}/resourceGroups/MyResourceGroup/providers/Microsoft.DocumentDB/databaseAccounts/${{ env.TF_VAR_production_cosmosdb_name }}/mongodbDatabases/${{ env.TF_VAR_production_db_name }} || true
+
+      - name: Terraform Plan
+        run: terraform plan
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve
